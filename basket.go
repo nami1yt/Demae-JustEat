@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/WiiLink24/DemaeJustEat/demae"
 	"github.com/WiiLink24/DemaeJustEat/justeat"
-	"github.com/gofrs/uuid"
 )
 
 const (
@@ -21,16 +21,12 @@ const (
 )
 
 func authKey(r *Response) {
-	authKeyValue, err := uuid.DefaultGenerator.NewV1()
-	if err != nil {
-		r.ReportError(err)
-		return
-	}
+	authKeyValue := demae.UUID()
 
 	// First we query to determine if the user already has an auth key. If they do, reset the basket.
 	var authExists bool
 	row := pool.QueryRow(context.Background(), DoesAuthKeyExist, r.GetHollywoodId())
-	err = row.Scan(&authExists)
+	err := row.Scan(&authExists)
 	if err != nil {
 		r.ReportError(err)
 		return
@@ -44,7 +40,7 @@ func authKey(r *Response) {
 		}
 	}
 
-	_, err = pool.Exec(context.Background(), InsertAuthkey, authKeyValue.String(), r.GetHollywoodId())
+	_, err = pool.Exec(context.Background(), InsertAuthkey, authKeyValue, r.GetHollywoodId())
 	if err != nil {
 		r.ReportError(err)
 		return
@@ -53,7 +49,7 @@ func authKey(r *Response) {
 	r.ResponseFields = []any{
 		demae.KVField{
 			XMLName: xml.Name{Local: "authKey"},
-			Value:   authKeyValue.String(),
+			Value:   authKeyValue,
 		},
 	}
 }
@@ -175,6 +171,12 @@ func orderDone(r *Response) {
 
 	err = client.PlaceOrder(r.request, basketId)
 	if err != nil {
+		PostDiscordWebhook(
+			"Performing error failed.",
+			fmt.Sprintf("The order was placed by user id %s", r.GetHollywoodId()),
+			config.OrderWebhook,
+			65311,
+		)
 		r.errorCode = http.StatusInternalServerError
 		r.ReportError(err)
 		return
@@ -189,4 +191,12 @@ func orderDone(r *Response) {
 	r.AddKVNode("orderDay", currentTime)
 	r.AddKVNode("hashKey", "Testing: 1, 2, 3")
 	r.AddKVNode("hour", currentTime)
+
+	// Post and log successful order!
+	PostDiscordWebhook(
+		"A successful order has been processed!",
+		fmt.Sprintf("The order was placed by user id %s", r.request.Header.Get("X-WiiNo")),
+		config.OrderWebhook,
+		65311,
+	)
 }

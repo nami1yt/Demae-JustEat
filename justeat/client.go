@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/WiiLink24/DemaeJustEat/demae"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/WiiLink24/DemaeJustEat/logger"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -32,17 +33,18 @@ type Client interface {
 }
 
 type JEClient struct {
-	Context      context.Context
-	Country      Country
-	KongAPIURL   string
-	GlobalAPIURL string
-	Auth         string
-	Address      string
-	PostalCode   string
-	WiiID        string
-	DeviceModel  string
-	Db           *pgxpool.Pool
-	rdb          *redis.Client
+	Context           context.Context
+	Country           Country
+	KongAPIURL        string
+	GlobalAPIURL      string
+	AuthenticationURL string
+	Auth              string
+	Address           string
+	PostalCode        string
+	WiiID             string
+	DeviceModel       string
+	Db                *pgxpool.Pool
+	rdb               *redis.Client
 }
 
 // NewClient constructs either an instance of JEClient or skip.Client.
@@ -54,20 +56,21 @@ func NewClient(ctx context.Context, db *pgxpool.Pool, req *http.Request, hollywo
 	}
 
 	client := &JEClient{
-		Context:      ctx,
-		Country:      country,
-		KongAPIURL:   KongAPIURLs[country],
-		GlobalAPIURL: GlobalMenuCDNURLs[country],
-		Address:      req.Header.Get("X-Address"),
-		PostalCode:   req.Header.Get("X-PostalCode"),
-		WiiID:        hollywoodID,
-		Db:           db,
-		rdb:          rdb,
+		Context:           ctx,
+		Country:           country,
+		KongAPIURL:        KongAPIURLs[country],
+		GlobalAPIURL:      GlobalMenuCDNURLs[country],
+		AuthenticationURL: AuthenticationURLs[country],
+		Address:           req.Header.Get("X-Address"),
+		PostalCode:        req.Header.Get("X-PostalCode"),
+		WiiID:             hollywoodID,
+		Db:                db,
+		rdb:               rdb,
 	}
 
 	err = client.SetAuth()
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, NotLinked
+		return nil, ErrNotLinked
 	} else if err != nil {
 		return nil, err
 	}
@@ -88,7 +91,7 @@ func (j *JEClient) SetAuth() error {
 
 	if expiresAt.Before(time.Now().UTC()) {
 		// Generate the new auth token
-		j.Auth, err = j.refreshAuthToken(refreshToken, acr, j.WiiID)
+		j.Auth, err = j.refreshAuthToken(refreshToken, j.WiiID)
 		if err != nil {
 			return err
 		}
@@ -97,21 +100,25 @@ func (j *JEClient) SetAuth() error {
 	return nil
 }
 
-func (j *JEClient) refreshAuthToken(refreshToken, acr, hash string) (string, error) {
-	_url := fmt.Sprintf("%s/identity/connect/token", j.KongAPIURL)
+func (j *JEClient) refreshAuthToken(refreshToken, hash string) (string, error) {
+	_url := fmt.Sprintf("%s/connect/token", j.AuthenticationURL)
 
 	payload := url.Values{}
-	payload.Set("refresh_token", refreshToken)
+	payload.Set("client_id", "consumer_web_je")
 	payload.Set("grant_type", "refresh_token")
-	payload.Set("scope", "openid mobile_scope offline_access")
-	payload.Set("acr_values", acr)
+	payload.Set("refresh_token", refreshToken)
 
 	resp, err := j.unauthorizedPost(_url, payload)
 	if err != nil {
 		return "", err
 	}
 
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			logger.Error(Auth, err.Error())
+		}
+	}(resp.Body)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
@@ -155,6 +162,6 @@ func GetCountry(countryCode string) (Country, error) {
 	case "110":
 		return UnitedKingdom, nil
 	default:
-		return Invalid, nil
+		return Invalid, ErrInvalidCountry
 	}
 }

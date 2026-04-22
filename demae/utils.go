@@ -3,13 +3,13 @@ package demae
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
-	"github.com/gofrs/uuid"
-	"github.com/mitchellh/go-wordwrap"
 	"math/rand"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/google/uuid"
+	"github.com/mitchellh/go-wordwrap"
 )
 
 // BoolToInt converts a boolean value to an integer.
@@ -60,12 +60,8 @@ func FloatToString(f float64) string {
 }
 
 func UUID() string {
-	u, _ := uuid.DefaultGenerator.NewV4()
+	u, _ := uuid.NewUUID()
 	return u.String()
-}
-
-func RandIntWRange(min, max int) int {
-	return min + int(rand.Int63n(int64(max-min+1)))
 }
 
 func Wordwrap(text string, width uint, maxLines int) string {
@@ -100,36 +96,4 @@ func CompressUUID(uuid string) string {
 	shortened := strings.TrimRight(encoded, "=")
 
 	return shortened
-}
-
-func DecompressUUID(shortened string) string {
-	// Step 1: Add padding back (Base64 needs length %4 == 0)
-	padding := len(shortened) % 4
-	if padding > 0 {
-		shortened += strings.Repeat("=", 4-padding)
-	}
-
-	// Step 2: Decode Base64 URL-safe to bytes
-	bytes, err := base64.URLEncoding.DecodeString(shortened)
-	if err != nil {
-		return ""
-	}
-
-	// Step 3: Convert bytes back to hex string
-	hexStr := hex.EncodeToString(bytes)
-
-	// Step 4: Reformat into UUID (add hyphens)
-	if len(hexStr) != 32 {
-		return ""
-	}
-	uuid := fmt.Sprintf(
-		"%s-%s-%s-%s-%s",
-		hexStr[:8],
-		hexStr[8:12],
-		hexStr[12:16],
-		hexStr[16:20],
-		hexStr[20:],
-	)
-
-	return uuid
 }

@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/WiiLink24/DemaeJustEat/justeat"
 	"github.com/gin-gonic/gin"
@@ -50,22 +49,6 @@ func getActiveOrders(email string) (map[uint32]justeat.WebBasket, error) {
 	return payloads, nil
 }
 
-func getActiveOrderForWii(hollywoodId string) (*justeat.WebBasket, error) {
-	var data string
-	err := pool.QueryRow(ctx, GetOrderForWii, hollywoodId).Scan(&data)
-	if err != nil {
-		return nil, err
-	}
-
-	var payload justeat.WebBasket
-	err = json.Unmarshal([]byte(data), &payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return &payload, nil
-}
-
 func clearOrder(hollywoodId string) error {
 	_, err := pool.Exec(ctx, ClearOrder, hollywoodId)
 	return err
@@ -93,16 +76,10 @@ func displayPaymentScreen(c *gin.Context) {
 
 	var activeOrdersArray []ActiveOrder
 	for _, wii := range _wiis.([]Wii) {
-		hollywood, err := strconv.ParseUint(wii.HollywoodID, 10, 64)
-		if err != nil {
-			c.Status(http.StatusInternalServerError)
-			return
-		}
-
-		if basket, ok := activeOrders[uint32(hollywood)]; ok {
+		if basket, ok := activeOrders[uint32(wii.HollywoodID)]; ok {
 			activeOrdersArray = append(activeOrdersArray, ActiveOrder{
 				WiiNumber:   wii.WiiNumber,
-				HollywoodID: uint32(hollywood),
+				HollywoodID: uint32(wii.HollywoodID),
 				Basket:      basket,
 			})
 		}
